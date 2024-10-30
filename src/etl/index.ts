@@ -9,6 +9,9 @@ import cliProgress from "cli-progress";
 import figlet from "figlet";
 import ora from "ora";
 
+// Nominatim API URL
+const NOMINATIM_API_URL = "https://nominatim.openstreetmap.org/search";
+
 // Define __filename and __dirname
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -18,6 +21,51 @@ interface FileMetrics {
   rowCount: number;
   errorCount: number;
   rowProcessingTimeTotal: number; // in milliseconds
+}
+
+async function saveToDatabase(data: any) {
+  console.log(`Saving row to database: ${JSON.stringify(data)}`);
+  // Implement actual DB save logic here.
+}
+
+async function geocodeAddress(address: string) {
+  const params = new URLSearchParams({ q: address, format: "json" });
+  const apiUrl = `${NOMINATIM_API_URL}?${params}`;
+
+  try {
+    const response = await fetch(apiUrl);
+    if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
+
+    const data = await response.json();
+    if (data.length === 0) throw new Error("No results found");
+
+    const { lat, lon } = data[0];
+    return { latitude: parseFloat(lat), longitude: parseFloat(lon) };
+  } catch (error) {
+    console.error(`Geocoding failed for "${address}": ${error.message}`);
+    return { latitude: null, longitude: null }; // Fallback
+  }
+}
+
+function extractAddress(meta: any): string {
+  const {
+    endereco,
+    numero,
+    bairro,
+    complemento,
+    endereco_cruzamento,
+    bairro_cruzamento,
+  } = meta;
+
+  if (endereco && numero) {
+    return `${endereco}, ${numero}, ${bairro}`;
+  } else if (endereco && complemento) {
+    return `${endereco}, ${complemento}, ${bairro}`;
+  } else if (endereco && endereco_cruzamento) {
+    return `${endereco} com ${endereco_cruzamento}, ${bairro_cruzamento || bairro}`;
+  } else {
+    return `${endereco || ""}, ${bairro || ""}`.trim();
+  }
 }
 
 async function processFile(
