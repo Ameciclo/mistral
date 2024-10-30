@@ -1,0 +1,40 @@
+# Node Modules and pnpm Lockfile
+node_modules/
+pnpm-lock.yaml
+
+# Typescript Build Outputs
+dist/
+build/
+out/
+*.js
+*.js.map
+*.d.ts
+*.d.ts.map
+*.tsbuildinfo
+
+# Logs
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Temporary Files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+*.tmp
+
+# OS Files
+*.log
+*.env
+.env.local
+.env.*.local
+
+# pnpm Store Directory (optional, if local cache is not needed)
+.pnpm-store/
+
+# VSCode Settings (optional)
+.vscode/
