@@ -1,13 +1,11 @@
 import fs from "fs";
 import path from "path";
 import { parse as fastCsvParse } from "fast-csv";
-import { pipeline, Transform } from "stream";
-import { promisify } from "util";
+import { pipeline } from "stream/promises";
+import { Transform } from "stream";
 import chalk from "chalk";
 import ora from "ora";
 import { createLogger, transports, format as winstonFormat } from "winston";
-
-const pipelineAsync = promisify(pipeline);
 
 // Setup directories
 const inputDirectory = path.join(__dirname, "data");
@@ -82,13 +80,21 @@ async function preprocessAllFiles(): Promise<void> {
     return;
   }
 
+  let grandTotalLinesProcessed = 0; // Initialize total lines counter
+
   for (const file of files) {
     const format = detectFileFormat(file);
-    await preprocessFile(file, format);
+    const linesProcessed = await preprocessFile(file, format);
+    grandTotalLinesProcessed += linesProcessed; // Accumulate total lines
   }
 
-  logger.info("Preprocessing completed successfully.");
+  // Log the completion messages to both console and log file
+  logger.info("Preprocessing completed.");
+  logger.info(`Total lines processed: ${grandTotalLinesProcessed}`);
   console.log(chalk.green("\nPreprocessing completed."));
+  console.log(
+    chalk.green(`Total lines processed: ${grandTotalLinesProcessed}`),
+  );
 }
 
 // Detects if the file is CSV or TSV based on its extension
@@ -100,7 +106,7 @@ function detectFileFormat(fileName: string): "csv" | "tsv" {
 async function preprocessFile(
   fileName: string,
   format: "csv" | "tsv",
-): Promise<void> {
+): Promise<number> {
   const filePath = path.join(inputDirectory, fileName);
   const outputFileName = fileName.replace(/\.(csv|tsv)$/, "_processed.ndjson");
   const outputFilePath = path.join(outputDirectory, outputFileName);
@@ -109,6 +115,7 @@ async function preprocessFile(
   logger.info(`Processing file: ${fileName} (Overwriting if exists)`);
 
   let lineNumber = 0; // Track line numbers for error reporting
+  let totalLinesProcessed = 0; // Initialize total lines processed
 
   try {
     const delimiter = detectDelimiter(filePath); // Detect delimiter dynamically
@@ -133,6 +140,12 @@ async function preprocessFile(
           const data = row.data || "";
           const hora = row.hora || "";
 
+          // Skip rows where 'situacao' is 'DUPLICIDADE' or 'CANCELADA'
+          if (situacao === "DUPLICIDADE" || situacao === "CANCELADA") {
+            callback(); // Skip this row
+            return;
+          }
+
           // Combine `data` and `hora` into an ISO8601 datetime string
           const datahora = combineDateTime(data, hora);
 
@@ -155,8 +168,10 @@ async function preprocessFile(
 
           const transformedRow = { tipo, situacao, datahora, meta };
 
-          // Write the transformed row as a JSON line
-          writeStream.write(JSON.stringify(transformedRow) + "\n");
+          // Push the transformed row downstream
+          this.push(JSON.stringify(transformedRow) + "\n");
+
+          totalLinesProcessed++; // Increment total lines processed
           callback();
         } catch (error) {
           logger.error(
@@ -169,10 +184,11 @@ async function preprocessFile(
       },
     });
 
-    await pipelineAsync(
+    await pipeline(
       readStream,
       fastCsvParse({ delimiter, headers: true, ignoreEmpty: true }),
       transformStream,
+      writeStream,
     );
 
     spinner.succeed(`Processed and saved: ${outputFileName}`);
@@ -183,6 +199,8 @@ async function preprocessFile(
     spinner.fail(`Error processing ${fileName}: ${errorMessage}`);
     logger.error(`Error processing file ${fileName}: ${errorMessage}`);
   }
+
+  return totalLinesProcessed; // Return total lines processed
 }
 
 // Start the preprocessing pipeline
